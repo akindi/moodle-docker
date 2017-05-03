@@ -1,0 +1,48 @@
+#!/bin/bash
+
+IFS="`printf "\n\t"`"
+set -eu
+cd "$(dirname "$0")"
+
+if [[ -z "${1-}" || "$1" =~ "-h" ]]; then
+    echo "USAGE: $0 MOODLE_VER"
+    echo "For example: $0 31"
+    exit 1
+fi
+
+ver="$1"
+
+if [[ ! -e "./moodle-latest-$ver/" ]]; then
+    read -p "moodle-latest-$ver does not exist. Download it? " download
+    if [[ ! "$download" =~ [yY] ]]; then
+        echo "Aborting."
+        exit 1
+    fi
+    wget --continue --no-check-certificate "https://download.moodle.org/download.php/direct/stable$ver/moodle-latest-$ver.tgz"
+    curdir="$PWD"
+    tempdir="/tmp/moodle-extract"
+    [[ -d "$tempdir" ]] && rm -r "$tempdir"
+    mkdir "$tempdir"
+    mv "moodle-latest-$ver.tgz" "$tempdir/"
+    cd "$tempdir"
+    tar -zxvf "moodle-latest-$ver.tgz"
+    mv moodle "$curdir/moodle-latest-$ver"
+    cd "$curdir"
+fi
+
+# Need to move the old config file out of the way so the installer can run
+# again
+old_config="./moodle-latest-$ver/config.php"
+if [[ -e "$old_config" ]]; then
+    echo "Moving $old_config --> /tmp/moodle-$ver-config-old.php"
+    mv "$old_config" "/tmp/moodle-$ver-config-old.php"
+fi
+
+docker run -P --sig-proxy=false \
+    --name moodle$ver \
+    -e MOODLE_URL=http://moodle.localhost:44$ver/ \
+    -e AK_MOODLE_TEST=true \
+    -p 44$ver:80 \
+    -v $(pwd)/moodle-latest-$ver/:/var/www/html/moodle/ \
+    -v $(pwd)/../moodle-local_akindi/:/var/www/html/moodle/local/akindi \
+    moodle
